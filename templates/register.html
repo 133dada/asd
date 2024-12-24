@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>注册</title>
+    <style>
+        .register-form {
+            width: 300px;
+            margin: 100px auto;
+            padding: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="register-form">
+        <h2>注册</h2>
+        <form method="POST">
+            <div>
+                <label>用户名：</label>
+                <input type="text" name="username" required>
+            </div>
+            <div>
+                <label>密码：</label>
+                <input type="password" name="password" required>
+            </div>
+            <button type="submit">注册</button>
+        </form>
+        <p>已有账号？<a href="{{ url_for('login') }}">登录</a></p>
+    </div>
+</body>
+</html> 

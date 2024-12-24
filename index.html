@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <title>打砖块游戏</title>
+    <style>
+        * { padding: 0; margin: 0; }
+        .game-container {
+            float: left;
+            width: 480px;
+        }
+        .user-info {
+            float: left;
+            padding: 20px;
+            width: 200px;
+        }
+        .scores-list {
+            margin-top: 20px;
+        }
+        .login-form, .register-form {
+            width: 300px;
+            margin: 100px auto;
+            padding: 20px;
+        }
+    </style>
+    <script src="static/js/phaser.2.4.2.min.js"></script>
+</head>
+<body>
+    <div id="gameArea" style="display: none;">
+        <div id="game-container" class="game-container"></div>
+        <div class="user-info">
+            <h2>欢迎, <span id="username"></span></h2>
+            <div class="scores-list">
+                <h3>历史最高分</h3>
+                <ul id="scoresList"></ul>
+            </div>
+            <button onclick="logout()">退出登录</button>
+        </div>
+    </div>
+
+    <div id="loginArea" class="login-form">
+        <h2>登录</h2>
+        <div>
+            <label>用户名：</label>
+            <input type="text" id="loginUsername" required>
+        </div>
+        <div>
+            <label>密码：</label>
+            <input type="password" id="loginPassword" required>
+        </div>
+        <button onclick="login()">登录</button>
+        <p>还没有账号？<a href="#" onclick="showRegister()">注册</a></p>
+    </div>
+
+    <div id="registerArea" class="register-form" style="display: none;">
+        <h2>注册</h2>
+        <div>
+            <label>用户名：</label>
+            <input type="text" id="registerUsername" required>
+        </div>
+        <div>
+            <label>密码：</label>
+            <input type="password" id="registerPassword" required>
+        </div>
+        <button onclick="register()">注册</button>
+        <p>已有账号？<a href="#" onclick="showLogin()">登录</a></p>
+    </div>
+
+<script>
+// 用 localStorage 模拟用户数据
+const USERS_KEY = 'brick_game_users';
+const SCORES_KEY = 'brick_game_scores';
+
+// 初始化本地存储
+if (!localStorage.getItem(USERS_KEY)) {
+    localStorage.setItem(USERS_KEY, JSON.stringify({}));
+}
+if (!localStorage.getItem(SCORES_KEY)) {
+    localStorage.setItem(SCORES_KEY, JSON.stringify({}));
+}
+
+function showLogin() {
+    document.getElementById('loginArea').style.display = 'block';
+    document.getElementById('registerArea').style.display = 'none';
+    document.getElementById('gameArea').style.display = 'none';
+}
+
+function showRegister() {
+    document.getElementById('loginArea').style.display = 'none';
+    document.getElementById('registerArea').style.display = 'block';
+    document.getElementById('gameArea').style.display = 'none';
+}
+
+function showGame() {
+    document.getElementById('loginArea').style.display = 'none';
+    document.getElementById('registerArea').style.display = 'none';
+    document.getElementById('gameArea').style.display = 'block';
+    
+    console.log('Game initialized:', gameDebug.init);
+    if (gameDebug.error) {
+        console.error('Game error:', gameDebug.error);
+    }
+    
+    setTimeout(() => {
+        if (game) {
+            console.log('Restarting game...');
+            restartGame();
+        }
+    }, 100);
+}
+
+function register() {
+    const username = document.getElementById('registerUsername').value;
+    const password = document.getElementById('registerPassword').value;
+    
+    const users = JSON.parse(localStorage.getItem(USERS_KEY));
+    if (users[username]) {
+        alert('用户名已存在');
+        return;
+    }
+    
+    users[username] = password;
+    localStorage.setItem(USERS_KEY, JSON.stringify(users));
+    alert('注册成功');
+    showLogin();
+}
+
+function login() {
+    const username = document.getElementById('loginUsername').value;
+    const password = document.getElementById('loginPassword').value;
+    
+    const users = JSON.parse(localStorage.getItem(USERS_KEY));
+    if (users[username] === password) {
+        localStorage.setItem('currentUser', username);
+        document.getElementById('username').textContent = username;
+        showGame();
+        loadScores();
+        restartGame();
+    } else {
+        alert('用户名或密码错误');
+    }
+}
+
+function logout() {
+    localStorage.removeItem('currentUser');
+    showLogin();
+    location.reload();
+}
+
+// 游戏相关代码
+var gameDebug = {
+    init: false,
+    error: null
+};
+
+var game = new Phaser.Game(480, 320, Phaser.AUTO, 'game-container', {
+    preload: function() {
+        try {
+            preload();
+            gameDebug.init = true;
+        } catch(e) {
+            gameDebug.error = e;
+            console.error('Preload error:', e);
+        }
+    },
+    create: create,
+    update: update
+});
+
+var ball;
+var paddle;
+var bricks;
+var newBrick;
+var brickInfo;
+var scoreText;
+var score = 0;
+var lives = 3;
+var livesText;
+var lifeLostText;
+var playing = false;
+var startButton;
+
+function preload() {
+    game.scale.scaleMode = Phaser.ScaleManager.SHOW_ALL;
+    game.scale.pageAlignHorizontally = true;
+    game.scale.pageAlignVertically = true;
+    game.stage.backgroundColor = '#eee';
+    
+    // 修改路径，去掉开头的斜杠
+    game.load.image('paddle', 'static/img/paddle.png');
+    game.load.image('brick', 'static/img/brick.png');
+    game.load.spritesheet('ball', 'static/img/wobble.png', 20, 20);
+    game.load.spritesheet('button', 'static/img/button.png', 120, 40);
+}
+
+function create() {
+    game.physics.startSystem(Phaser.Physics.ARCADE);
+    game.physics.arcade.checkCollision.down = false;
+    ball = game.add.sprite(game.world.width*0.5, game.world.height-25, 'ball');
+    ball.animations.add('wobble', [0,1,0,2,0,1,0,2,0], 24);
+    ball.anchor.set(0.5);
+    game.physics.enable(ball, Phaser.Physics.ARCADE);
+    ball.body.collideWorldBounds = true;
+    ball.body.bounce.set(1);
+    ball.checkWorldBounds = true;
+    ball.events.onOutOfBounds.add(ballLeaveScreen, this);
+
+    paddle = game.add.sprite(game.world.width*0.5, game.world.height-5, 'paddle');
+    paddle.anchor.set(0.5,1);
+    game.physics.enable(paddle, Phaser.Physics.ARCADE);
+    paddle.body.immovable = true;
+
+    initBricks();
+
+    textStyle = { font: '18px Arial', fill: '#0095DD' };
+    scoreText = game.add.text(5, 5, 'Points: 0', textStyle);
+    livesText = game.add.text(game.world.width-5, 5, 'Lives: '+lives, textStyle);
+    livesText.anchor.set(1,0);
+    lifeLostText = game.add.text(game.world.width*0.5, game.world.height*0.5, 'Life lost, tap to continue', textStyle);
+    lifeLostText.anchor.set(0.5);
+    lifeLostText.visible = false;
+
+    startButton = game.add.button(game.world.width*0.5, game.world.height*0.5, 'button', startGame, this, 1, 0, 2);
+    startButton.anchor.set(0.5);
+}
+
+function update() {
+    game.physics.arcade.collide(ball, paddle, ballHitPaddle);
+    game.physics.arcade.collide(ball, bricks, ballHitBrick);
+    if(playing) {
+        paddle.x = game.input.x || game.world.width*0.5;
+    }
+}
+
+function initBricks() {
+    brickInfo = {
+        width: 50,
+        height: 20,
+        count: {
+            row: 7,
+            col: 3
+        },
+        offset: {
+            top: 50,
+            left: 60
+        },
+        padding: 10
+    }
+    bricks = game.add.group();
+    for(c=0; c<brickInfo.count.col; c++) {
+        for(r=0; r<brickInfo.count.row; r++) {
+            var brickX = (r*(brickInfo.width+brickInfo.padding))+brickInfo.offset.left;
+            var brickY = (c*(brickInfo.height+brickInfo.padding))+brickInfo.offset.top;
+            newBrick = game.add.sprite(brickX, brickY, 'brick');
+            game.physics.enable(newBrick, Phaser.Physics.ARCADE);
+            newBrick.body.immovable = true;
+            newBrick.anchor.set(0.5);
+            bricks.add(newBrick);
+        }
+    }
+}
+
+function ballHitBrick(ball, brick) {
+    var killTween = game.add.tween(brick.scale);
+    killTween.to({x:0,y:0}, 200, Phaser.Easing.Linear.None);
+    killTween.onComplete.addOnce(function(){
+        brick.kill();
+    }, this);
+    killTween.start();
+    score += 10;
+    scoreText.setText('Points: '+score);
+    
+    if(score === brickInfo.count.row*brickInfo.count.col*10) {
+        saveScore(score);
+        alert('You won the game, congratulations!');
+        location.reload();
+    }
+}
+
+function ballLeaveScreen() {
+    lives--;
+    if(lives) {
+        livesText.setText('Lives: '+lives);
+        lifeLostText.visible = true;
+        ball.reset(game.world.width*0.5, game.world.height-25);
+        paddle.reset(game.world.width*0.5, game.world.height-5);
+        game.input.onDown.addOnce(function(){
+            lifeLostText.visible = false;
+            ball.body.velocity.set(150, -150);
+        }, this);
+    }
+    else {
+        saveScore(score);
+        alert('You lost, game over!');
+        location.reload();
+    }
+}
+
+function ballHitPaddle(ball, paddle) {
+    ball.animations.play('wobble');
+    ball.body.velocity.x = -1*5*(paddle.x-ball.x);
+}
+
+function startGame() {
+    startButton.destroy();
+    ball.body.velocity.set(150, -150);
+    playing = true;
+}
+
+// 修改保存分数的函数
+function saveScore(score) {
+    const username = localStorage.getItem('currentUser');
+    if (!username) return;
+    
+    let scores = JSON.parse(localStorage.getItem(SCORES_KEY));
+    if (!scores[username]) {
+        scores[username] = [];
+    }
+    
+    scores[username].push({
+        score: score,
+        date: new Date().toISOString()
+    });
+    
+    localStorage.setItem(SCORES_KEY, JSON.stringify(scores));
+    loadScores();
+}
+
+function loadScores() {
+    const username = localStorage.getItem('currentUser');
+    if (!username) return;
+    
+    const scores = JSON.parse(localStorage.getItem(SCORES_KEY));
+    const userScores = scores[username] || [];
+    
+    const scoresList = document.getElementById('scoresList');
+    scoresList.innerHTML = '';
+    
+    userScores.sort((a, b) => b.score - a.score)
+        .slice(0, 10)
+        .forEach(score => {
+            const li = document.createElement('li');
+            li.textContent = `${score.score}分 - ${new Date(score.date).toLocaleString()}`;
+            scoresList.appendChild(li);
+        });
+}
+
+function restartGame() {
+    score = 0;
+    lives = 3;
+    playing = false;
+    
+    // 重置分数显示
+    if (scoreText) {
+        scoreText.setText('Points: 0');
+    }
+    if (livesText) {
+        livesText.setText('Lives: ' + lives);
+    }
+    
+    // 重置球和挡板位置
+    if (ball) {
+        ball.reset(game.world.width*0.5, game.world.height-25);
+        ball.body.velocity.set(0, 0);
+    }
+    if (paddle) {
+        paddle.reset(game.world.width*0.5, game.world.height-5);
+    }
+    
+    // 重新创建砖块
+    if (bricks) {
+        bricks.removeAll(true);
+    }
+    initBricks();
+    
+    // 创建新的开始按钮
+    if (!startButton) {
+        startButton = game.add.button(game.world.width*0.5, game.world.height*0.5, 'button', startGame, this, 1, 0, 2);
+        startButton.anchor.set(0.5);
+    }
+}
+
+// 检查登录状态
+const currentUser = localStorage.getItem('currentUser');
+if (currentUser) {
+    document.getElementById('username').textContent = currentUser;
+    showGame();
+    loadScores();
+} else {
+    showLogin();
+}
+</script>
+</body>
+</html> 
